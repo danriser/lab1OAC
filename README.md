@@ -1,1 +1,1 @@
-# lab1OAC
+### Projeto de laboratório 1 para disciplina Organização e Arquitetura de Computadores
