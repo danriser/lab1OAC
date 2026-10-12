@@ -100,8 +100,11 @@ Valores de `fmttab`:
 | 3 | `jalr` | `jalr ra, t0, 0` |
 | 4 | `rd, rs1, rs2` (tipo R) | `add t0, t1, t2` |
 | 5 | `rs2, imm(rs1)` (tipo S) | `sw t0, 8(sp)` |
+| 6 | `rd, imm20` (tipo U) | `lui t0, 0x1001` |
+| 7 | `rs1, rs2, rótulo` (tipo B) | `beq t0, t1, fim` |
+| 8 | `rd, rótulo` (tipo J) | `jal ra, loop` ou `jal loop` |
 
-A constante `.eqv N_INST` guarda quantas instruções existem. O `lookup` usa esse valor.
+A constante `.eqv N_INST` guarda quantas instruções existem (hoje 37). O `lookup` usa esse valor.
 
 ## Como adicionar uma instrução que já tem formato pronto
 
@@ -118,7 +121,7 @@ Exemplo: `xori` já existe. Para um caso novo do mesmo formato, como `lh` (se n�
 
 Não precisa mexer no `process_line`, porque o formato já sabe ler os operandos.
 
-## Como adicionar um formato novo (tipos U, B e J)
+## Como adicionar um formato novo
 
 Os formatos 4 e 5 são o modelo. Em `process_line`, depois de achar o mnemônico:
 
@@ -130,7 +133,7 @@ beq  t3, t0, s_fmt      # formato S
 j    i_start            # os demais caem no código do tipo I
 ```
 
-Para um formato novo (por exemplo, 6 = tipo U):
+Para um formato novo (os formatos 6, 7 e 8, dos tipos U, B e J, foram feitos assim e servem de exemplo: `u_fmt`, `b_fmt` e `j_fmt`):
 
 1. Escolha um número novo em `fmttab` e coloque as instruções dele na tabela.
 2. No bloco acima, inclua `li t0, 6` / `beq t3, t0, u_fmt`. O desvio precisa ficar **antes** do `j i_start`.
@@ -158,19 +161,24 @@ s_fmt:
     j    i_finish
 ```
 
-## Rótulos (beq, bne, jal) - ainda não implementado
+## Rótulos e as duas passadas
 
-`beq`, `bne` e `jal` usam o **deslocamento até o rótulo**, e o rótulo pode estar adiante no arquivo.
-Por isso é preciso ler o arquivo duas vezes:
+`beq`, `bne` e `jal` usam o deslocamento até um rótulo, que pode estar adiante no arquivo.
+Por isso a `main` percorre o arquivo **duas vezes**, controladas pela variável `pass` (1 ou 2):
 
-1. **Passada 1:** percorrer as linhas só para anotar `rótulo -> endereço` numa tabela.
-   - `.text`: `0x00400000 + 4 * índice da instrução`.
-   - `.data`: `0x10010000 + deslocamento em bytes`.
-2. **Passada 2:** o `process_line` atual, que busca o rótulo na tabela e calcula
-   `deslocamento = endereço_do_rótulo - endereço_da_instrução`.
+1. **Passada 1:** o `process_line` só anota os rótulos (`define_label`) e conta as instruções (`s5`).
+   Os erros ficam em silêncio (`report_error` não imprime). Só erro de rótulo repetido, longo demais ou tabela cheia aparece.
+   - Endereço no `.text`: `0x00400000 + 4 * índice da instrução`.
+   - Endereço no `.data`: `0x10010000 + deslocamento em bytes`.
+2. **Passada 2:** monta de verdade. `s2`, `s3`, `s5` e `datalen` são zerados entre as passadas.
+   O `b_fmt` e o `j_fmt` fazem `find_label` e calculam `endereço do rótulo - endereço da instrução`.
 
-A ideia é repetir o laço `line_loop` da `main` com um modo "só rótulos" na primeira volta.
-Cuidado com a numeração do `s5` (índice da instrução) e do `s3` (seção), que precisam ser zerados entre as passadas.
+A tabela de rótulos: `lblnames` (256 entradas de 32 bytes, com até 31 caracteres), `lbladdr` (endereços) e `lblcount`.
+Os desvios aceitam rótulo ou um número (deslocamento em bytes, extensão que o RARS não tem).
+`jal rotulo` sem `rd` usa `ra` (`x1`), como no RARS.
+
+Cuidado: o RARS limita os desvios condicionais a 4 KB. Se o `main.asm` crescer e uma rotina ficar longe do rótulo de erro,
+troque `bltz a0, rotulo` por `bgez a0, ok` seguido de `j rotulo` (foi o caso do `write_file`).
 
 ## Formato dos arquivos de saída
 
@@ -208,9 +216,10 @@ Dicas:
 | Tipo I (aritméticas, loads, `jalr`) | pronto |
 | Tipo S (`sb`, `sh`, `sw`) | pronto |
 | `.data` e `_data.mif` | pronto |
-| `lui`, `auipc` (tipo U) | falta |
-| `beq`, `bne` (tipo B) e `jal` (tipo J) | falta, precisa de rótulos |
+| `lui`, `auipc` (tipo U) | pronto |
+| `beq`, `bne`, `blt`, `bge`, `bltu`, `bgeu` (tipo B) | pronto |
+| `jal` (tipo J) e rótulos | pronto |
 | Relatório em PDF | falta |
 
-Os arquivos em `scripts/` (`montador_tipoR/I/S.asm`, `read_input.asm`) são as versões separadas, mantidas por histórico.
+Os arquivos em `scripts/` (`montador_tipoR/I/S/B/J.asm`, `read_input.asm`) são versões separadas de cada tipo, só com aquelas instruções.
 O arquivo de entrega é o `main.asm`.

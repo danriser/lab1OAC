@@ -29,6 +29,7 @@ e_lfull:     .asciz "tabela de rotulos cheia (maximo 256)"
 e_llong:     .asciz "rotulo longo demais (maximo 31 caracteres)"
 e_boff:      .asciz "desvio fora do alcance (-4096 a 4094 bytes) ou desalinhado"
 e_nolbl:     .asciz "esperado rotulo ou deslocamento no ultimo operando"
+e_joff:      .asciz "salto fora do alcance (-1048576 a 1048574 bytes) ou desalinhado"
 e_shamt:     .asciz "deslocamento fora do intervalo (0 a 31)"
 e_drange:    .asciz "valor fora do intervalo do tipo da diretiva (.byte -128..255, .half -32768..65535)"
 e_dfull:     .asciz "area .data maior que 4096 bytes (1024 palavras)"
@@ -46,7 +47,7 @@ sep2:        .asciz ";   % "
 sep3:        .asciz ": "
 sep4:        .asciz " %\n"
 
-.eqv N_INST, 36
+.eqv N_INST, 37
 
 .align 3
 instnames:
@@ -122,10 +123,12 @@ instnames:
     .align 3
     .asciz "bgeu"
     .align 3
-fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7
-optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23, 0x37, 0x17, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63
-f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2, 0, 0, 0, 1, 4, 5, 6, 7
-f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    .asciz "jal"
+    .align 3
+fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7, 8
+optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23, 0x37, 0x17, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x6F
+f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2, 0, 0, 0, 1, 4, 5, 6, 7, 0
+f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 .align 3
 regnames:
     .asciz "zero"
@@ -645,6 +648,8 @@ pass2_inst:
     beq  t3, t0, u_fmt
     li   t0, 7
     beq  t3, t0, b_fmt
+    li   t0, 8
+    beq  t3, t0, j_fmt
     j    i_start
 
 r_fmt:
@@ -803,6 +808,104 @@ b_check:
     srli t1, s9, 11
     andi t1, t1, 1
     slli t1, t1, 7
+    or   s8, s8, t1
+    j    i_finish
+
+j_fmt:
+    mv   a0, s7
+    mv   a1, s10
+    call skip_ws
+    mv   s7, a0
+    bgeu s7, s10, bad_nolbl
+    mv   a0, s7
+    mv   a1, s10
+    call scan_ident
+    mv   a1, s10
+    call skip_ws
+    bgeu a0, s10, j_nord
+    lbu  t0, 0(a0)
+    li   t1, 44
+    bne  t0, t1, j_nord
+    mv   a0, s7
+    mv   a1, s10
+    call parse_reg
+    bltz a1, bad_reg
+    slli t0, a1, 7
+    or   s8, s8, t0
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    li   a2, 44
+    call expect_char
+    bltz a1, bad_sep
+    mv   s7, a0
+    j    j_target
+j_nord:
+    ori  s8, s8, 128
+j_target:
+    mv   a0, s7
+    mv   a1, s10
+    call skip_ws
+    mv   s7, a0
+    bgeu s7, s10, bad_nolbl
+    lbu  t0, 0(s7)
+    li   t1, 45
+    beq  t0, t1, j_num
+    li   t1, 43
+    beq  t0, t1, j_num
+    addi t1, t0, -48
+    li   t2, 10
+    bltu t1, t2, j_num
+    mv   a0, s7
+    mv   a1, s10
+    call scan_ident
+    sw   a0, 12(sp)
+    sub  a1, a0, s7
+    mv   a0, s7
+    call find_label
+    bltz a0, bad_undef
+    slli t0, a0, 2
+    la   t1, lbladdr
+    add  t1, t1, t0
+    lw   t1, 0(t1)
+    slli t2, s5, 2
+    li   t3, 0x00400000
+    add  t2, t2, t3
+    sub  s9, t1, t2
+    lw   s7, 12(sp)
+    j    j_check
+j_num:
+    mv   a0, s7
+    mv   a1, s10
+    call parse_imm
+    mv   s7, a0
+    li   t0, 1
+    beq  a2, t0, bad_imm
+    li   t0, 2
+    beq  a2, t0, bad_joff
+    mv   s9, a1
+j_check:
+    andi t0, s9, 1
+    bnez t0, bad_joff
+    li   t0, 1048576
+    add  t1, s9, t0
+    li   t2, 2097152
+    bgeu t1, t2, bad_joff
+    srli t1, s9, 20
+    andi t1, t1, 1
+    slli t1, t1, 31
+    or   s8, s8, t1
+    srli t1, s9, 1
+    andi t1, t1, 1023
+    slli t1, t1, 21
+    or   s8, s8, t1
+    srli t1, s9, 11
+    andi t1, t1, 1
+    slli t1, t1, 20
+    or   s8, s8, t1
+    srli t1, s9, 12
+    andi t1, t1, 255
+    slli t1, t1, 12
     or   s8, s8, t1
     j    i_finish
 
@@ -1031,6 +1134,8 @@ pl_ret:
 bad_urange: la a0, e_urange
             j  pl_error
 bad_undef:  la a0, e_undef
+            j  pl_error
+bad_joff:   la a0, e_joff
             j  pl_error
 bad_boff:   la a0, e_boff
             j  pl_error
@@ -1468,13 +1573,17 @@ write_file:
     li   a1, 1
     li   a7, 1024
     ecall
-    bltz a0, err_create
+    bgez a0, write_file_open
+    j    err_create
+write_file_open:
     mv   s10, a0
     mv   a1, s7
     mv   a2, s9
     li   a7, 64
     ecall
-    bne  a0, s9, err_write
+    beq  a0, s9, write_file_done
+    j    err_write
+write_file_done:
     mv   a0, s10
     li   a7, 57
     ecall
