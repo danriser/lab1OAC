@@ -22,6 +22,7 @@ e_depth:     .asciz "programa maior que 16384 instrucoes (DEPTH do MIF)"
 e_imm:       .asciz "imediato invalido ou ausente (aceito: decimal, negativo ou 0xHHHHHHHH)"
 e_range:     .asciz "imediato fora do intervalo de 12 bits (-2048 a 2047)"
 e_mem:       .asciz "esperado o formato imediato(registrador), ex.: 4(sp)"
+e_urange:    .asciz "imediato fora do intervalo de 20 bits (0 a 0xFFFFF, ou -524288 a -1)"
 e_shamt:     .asciz "deslocamento fora do intervalo (0 a 31)"
 e_drange:    .asciz "valor fora do intervalo do tipo da diretiva (.byte -128..255, .half -32768..65535)"
 e_dfull:     .asciz "area .data maior que 4096 bytes (1024 palavras)"
@@ -39,7 +40,7 @@ sep2:        .asciz ";   % "
 sep3:        .asciz ": "
 sep4:        .asciz " %\n"
 
-.eqv N_INST, 28
+.eqv N_INST, 30
 
 .align 3
 instnames:
@@ -99,10 +100,14 @@ instnames:
     .align 3
     .asciz "sw"
     .align 3
-fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5
-optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23
-f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2
-f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    .asciz "lui"
+    .align 3
+    .asciz "auipc"
+    .align 3
+fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5, 6, 6
+optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23, 0x37, 0x17
+f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2, 0, 0
+f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 .align 3
 regnames:
     .asciz "zero"
@@ -587,6 +592,8 @@ not_dir:
     beq  t3, t0, r_fmt
     li   t0, 5
     beq  t3, t0, s_fmt
+    li   t0, 6
+    beq  t3, t0, u_fmt
     j    i_start
 
 r_fmt:
@@ -623,6 +630,36 @@ r_fmt:
     slli t0, a1, 20
     or   s8, s8, t0
     mv   s7, a0
+    j    i_finish
+
+u_fmt:
+    mv   a0, s7
+    mv   a1, s10
+    call parse_reg
+    bltz a1, bad_reg
+    slli t0, a1, 7
+    or   s8, s8, t0
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    li   a2, 44
+    call expect_char
+    bltz a1, bad_sep
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    call parse_imm
+    mv   s7, a0
+    li   t0, 1
+    beq  a2, t0, bad_imm
+    li   t0, 2
+    beq  a2, t0, bad_urange
+    li   t0, 524288
+    add  t1, a1, t0
+    li   t2, 1572864
+    bgeu t1, t2, bad_urange
+    slli t0, a1, 12
+    or   s8, s8, t0
     j    i_finish
 
 s_fmt:
@@ -847,6 +884,8 @@ pl_ret:
     addi sp, sp, 48
     ret
 
+bad_urange: la a0, e_urange
+            j  pl_error
 bad_shamt:  la a0, e_shamt
             j  pl_error
 
