@@ -23,6 +23,12 @@ e_imm:       .asciz "imediato invalido ou ausente (aceito: decimal, negativo ou 
 e_range:     .asciz "imediato fora do intervalo de 12 bits (-2048 a 2047)"
 e_mem:       .asciz "esperado o formato imediato(registrador), ex.: 4(sp)"
 e_urange:    .asciz "imediato fora do intervalo de 20 bits (0 a 0xFFFFF, ou -524288 a -1)"
+e_undef:     .asciz "rotulo nao definido"
+e_dup:       .asciz "rotulo ja definido"
+e_lfull:     .asciz "tabela de rotulos cheia (maximo 256)"
+e_llong:     .asciz "rotulo longo demais (maximo 31 caracteres)"
+e_boff:      .asciz "desvio fora do alcance (-4096 a 4094 bytes) ou desalinhado"
+e_nolbl:     .asciz "esperado rotulo ou deslocamento no ultimo operando"
 e_shamt:     .asciz "deslocamento fora do intervalo (0 a 31)"
 e_drange:    .asciz "valor fora do intervalo do tipo da diretiva (.byte -128..255, .half -32768..65535)"
 e_dfull:     .asciz "area .data maior que 4096 bytes (1024 palavras)"
@@ -40,7 +46,7 @@ sep2:        .asciz ";   % "
 sep3:        .asciz ": "
 sep4:        .asciz " %\n"
 
-.eqv N_INST, 30
+.eqv N_INST, 36
 
 .align 3
 instnames:
@@ -104,10 +110,22 @@ instnames:
     .align 3
     .asciz "auipc"
     .align 3
-fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5, 6, 6
-optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23, 0x37, 0x17
-f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2, 0, 0
-f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    .asciz "beq"
+    .align 3
+    .asciz "bne"
+    .align 3
+    .asciz "blt"
+    .align 3
+    .asciz "bge"
+    .align 3
+    .asciz "bltu"
+    .align 3
+    .asciz "bgeu"
+    .align 3
+fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7
+optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23, 0x37, 0x17, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63
+f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2, 0, 0, 0, 1, 4, 5, 6, 7
+f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 .align 3
 regnames:
     .asciz "zero"
@@ -207,6 +225,10 @@ fname:   .space 260
 outname: .space 330
 outname2: .space 330
 datalen: .word 0
+pass:    .word 0
+lblcount: .word 0
+lbladdr: .space 1024
+lblnames: .space 8192
 databuf: .space 4096
 inbuf:   .space 70000
 
@@ -354,9 +376,13 @@ name_done2:
     call put_str
     mv   s1, a0
 
+    li   s4, 0
+    la   t0, pass
+    li   t1, 1
+    sw   t1, 0(t0)
+pass_start:
     li   s2, 0
     li   s3, 0
-    li   s4, 0
     li   s5, 0
     la   s0, inbuf
 line_loop:
@@ -376,6 +402,16 @@ line_loop:
     j    line_loop
 
 lines_done:
+    la   t0, pass
+    lw   t1, 0(t0)
+    li   t2, 1
+    bne  t1, t2, pass2_done
+    li   t1, 2
+    sw   t1, 0(t0)
+    la   t0, datalen
+    sw   zero, 0(t0)
+    j    pass_start
+pass2_done:
     bnez s4, finish_errors
     mv   a0, s1
     la   a1, ftr
@@ -503,7 +539,13 @@ cmt_done:
     li   t1, 58
     bne  t0, t1, no_label
     beq  a0, s7, bad_label
-    addi s7, a0, 1
+    sub  a1, a0, s7
+    sw   a1, 12(sp)
+    mv   a0, s7
+    call define_label
+    lw   t0, 12(sp)
+    add  s7, s7, t0
+    addi s7, s7, 1
     mv   a0, s7
     mv   a1, s10
     call skip_ws
@@ -569,6 +611,13 @@ not_dir:
     li   a3, N_INST
     call lookup
     bltz a0, bad_inst
+    la   t0, pass
+    lw   t0, 0(t0)
+    li   t1, 1
+    bne  t0, t1, pass2_inst
+    addi s5, s5, 1
+    j    pl_ret
+pass2_inst:
     lw   s7, 8(sp)
     sw   a0, 24(sp)
     la   t0, fmttab
@@ -594,6 +643,8 @@ not_dir:
     beq  t3, t0, s_fmt
     li   t0, 6
     beq  t3, t0, u_fmt
+    li   t0, 7
+    beq  t3, t0, b_fmt
     j    i_start
 
 r_fmt:
@@ -660,6 +711,99 @@ u_fmt:
     bgeu t1, t2, bad_urange
     slli t0, a1, 12
     or   s8, s8, t0
+    j    i_finish
+
+b_fmt:
+    mv   a0, s7
+    mv   a1, s10
+    call parse_reg
+    bltz a1, bad_reg
+    slli t0, a1, 15
+    or   s8, s8, t0
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    li   a2, 44
+    call expect_char
+    bltz a1, bad_sep
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    call parse_reg
+    bltz a1, bad_reg
+    slli t0, a1, 20
+    or   s8, s8, t0
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    li   a2, 44
+    call expect_char
+    bltz a1, bad_sep
+    mv   s7, a0
+    mv   a0, s7
+    mv   a1, s10
+    call skip_ws
+    mv   s7, a0
+    bgeu s7, s10, bad_nolbl
+    lbu  t0, 0(s7)
+    li   t1, 45
+    beq  t0, t1, b_num
+    li   t1, 43
+    beq  t0, t1, b_num
+    addi t1, t0, -48
+    li   t2, 10
+    bltu t1, t2, b_num
+    mv   a0, s7
+    mv   a1, s10
+    call scan_ident
+    sw   a0, 12(sp)
+    sub  a1, a0, s7
+    mv   a0, s7
+    call find_label
+    bltz a0, bad_undef
+    slli t0, a0, 2
+    la   t1, lbladdr
+    add  t1, t1, t0
+    lw   t1, 0(t1)
+    slli t2, s5, 2
+    li   t3, 0x00400000
+    add  t2, t2, t3
+    sub  s9, t1, t2
+    lw   s7, 12(sp)
+    j    b_check
+b_num:
+    mv   a0, s7
+    mv   a1, s10
+    call parse_imm
+    mv   s7, a0
+    li   t0, 1
+    beq  a2, t0, bad_imm
+    li   t0, 2
+    beq  a2, t0, bad_boff
+    mv   s9, a1
+b_check:
+    andi t0, s9, 1
+    bnez t0, bad_boff
+    li   t0, 4096
+    add  t1, s9, t0
+    li   t2, 8192
+    bgeu t1, t2, bad_boff
+    srli t1, s9, 12
+    andi t1, t1, 1
+    slli t1, t1, 31
+    or   s8, s8, t1
+    srli t1, s9, 5
+    andi t1, t1, 63
+    slli t1, t1, 25
+    or   s8, s8, t1
+    srli t1, s9, 1
+    andi t1, t1, 15
+    slli t1, t1, 8
+    or   s8, s8, t1
+    srli t1, s9, 11
+    andi t1, t1, 1
+    slli t1, t1, 7
+    or   s8, s8, t1
     j    i_finish
 
 s_fmt:
@@ -886,10 +1030,22 @@ pl_ret:
 
 bad_urange: la a0, e_urange
             j  pl_error
+bad_undef:  la a0, e_undef
+            j  pl_error
+bad_boff:   la a0, e_boff
+            j  pl_error
+bad_nolbl:  la a0, e_nolbl
+            j  pl_error
 bad_shamt:  la a0, e_shamt
             j  pl_error
 
 report_error:
+    la   t1, pass
+    lw   t1, 0(t1)
+    li   t2, 1
+    bne  t1, t2, report_error_now
+    ret
+report_error_now:
     mv   t0, a0
     la   a0, msg_line
     li   a7, 4
@@ -1545,4 +1701,104 @@ dd_ret:
     lw   s9, 16(sp)
     lw   s10, 12(sp)
     addi sp, sp, 32
+    ret
+
+find_label:
+    la   t0, lblcount
+    lw   t0, 0(t0)
+    li   t1, 0
+find_label_loop:
+    bgeu t1, t0, find_label_none
+    slli t2, t1, 5
+    la   t3, lblnames
+    add  t3, t3, t2
+    li   t4, 0
+find_label_cmp:
+    bgeu t4, a1, find_label_tail
+    add  t5, a0, t4
+    lbu  t5, 0(t5)
+    add  t6, t3, t4
+    lbu  t6, 0(t6)
+    bne  t5, t6, find_label_next
+    addi t4, t4, 1
+    j    find_label_cmp
+find_label_tail:
+    add  t6, t3, a1
+    lbu  t6, 0(t6)
+    beqz t6, find_label_found
+find_label_next:
+    addi t1, t1, 1
+    j    find_label_loop
+find_label_found:
+    mv   a0, t1
+    ret
+find_label_none:
+    li   a0, -1
+    ret
+
+define_label:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    sw   a0, 8(sp)
+    sw   a1, 4(sp)
+    la   t0, pass
+    lw   t0, 0(t0)
+    li   t1, 1
+    bne  t0, t1, define_label_ret
+    li   t0, 31
+    bltu t0, a1, define_label_long
+    call find_label
+    bgez a0, define_label_dup
+    la   t0, lblcount
+    lw   t1, 0(t0)
+    li   t2, 256
+    bgeu t1, t2, define_label_full
+    slli t2, t1, 5
+    la   t3, lblnames
+    add  t3, t3, t2
+    lw   a0, 8(sp)
+    lw   a1, 4(sp)
+    li   t4, 0
+define_label_copy:
+    bgeu t4, a1, define_label_copied
+    add  t5, a0, t4
+    lbu  t5, 0(t5)
+    add  t6, t3, t4
+    sb   t5, 0(t6)
+    addi t4, t4, 1
+    j    define_label_copy
+define_label_copied:
+    add  t6, t3, a1
+    sb   zero, 0(t6)
+    beqz s3, define_label_text
+    li   t4, 0x10010000
+    la   t5, datalen
+    lw   t5, 0(t5)
+    add  t4, t4, t5
+    j    define_label_store
+define_label_text:
+    slli t4, s5, 2
+    li   t5, 0x00400000
+    add  t4, t4, t5
+define_label_store:
+    slli t2, t1, 2
+    la   t3, lbladdr
+    add  t3, t3, t2
+    sw   t4, 0(t3)
+    addi t1, t1, 1
+    sw   t1, 0(t0)
+    j    define_label_ret
+define_label_dup:
+    la   a0, e_dup
+    j    define_label_err
+define_label_long:
+    la   a0, e_llong
+    j    define_label_err
+define_label_full:
+    la   a0, e_lfull
+define_label_err:
+    call report_error_now
+define_label_ret:
+    lw   ra, 12(sp)
+    addi sp, sp, 16
     ret
