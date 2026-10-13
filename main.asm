@@ -30,7 +30,6 @@ e_llong:     .asciz "rotulo longo demais (maximo 31 caracteres)"
 e_boff:      .asciz "desvio fora do alcance (-4096 a 4094 bytes) ou desalinhado"
 e_nolbl:     .asciz "esperado rotulo ou deslocamento no ultimo operando"
 e_joff:      .asciz "salto fora do alcance (-1048576 a 1048574 bytes) ou desalinhado"
-e_shamt:     .asciz "deslocamento fora do intervalo (0 a 31)"
 e_drange:    .asciz "valor fora do intervalo do tipo da diretiva (.byte -128..255, .half -32768..65535)"
 e_dfull:     .asciz "area .data maior que 4096 bytes (1024 palavras)"
 e_dstr:      .asciz "string invalida (esperado texto entre aspas, escapes \\n \\t \\r \\0 \\\\ \\\")"
@@ -47,7 +46,7 @@ sep2:        .asciz ";   % "
 sep3:        .asciz ": "
 sep4:        .asciz " %\n"
 
-.eqv N_INST, 37
+.eqv N_INST, 22
 
 .align 3
 instnames:
@@ -59,13 +58,9 @@ instnames:
     .align 3
     .asciz "slt"
     .align 3
-    .asciz "sltu"
-    .align 3
     .asciz "xor"
     .align 3
     .asciz "srl"
-    .align 3
-    .asciz "sra"
     .align 3
     .asciz "or"
     .align 3
@@ -75,35 +70,17 @@ instnames:
     .align 3
     .asciz "slti"
     .align 3
-    .asciz "sltiu"
-    .align 3
     .asciz "xori"
     .align 3
     .asciz "ori"
     .align 3
     .asciz "andi"
     .align 3
-    .asciz "slli"
-    .align 3
-    .asciz "srli"
-    .align 3
-    .asciz "srai"
-    .align 3
-    .asciz "lb"
-    .align 3
-    .asciz "lh"
-    .align 3
     .asciz "lw"
-    .align 3
-    .asciz "lbu"
     .align 3
     .asciz "lhu"
     .align 3
     .asciz "jalr"
-    .align 3
-    .asciz "sb"
-    .align 3
-    .asciz "sh"
     .align 3
     .asciz "sw"
     .align 3
@@ -115,20 +92,12 @@ instnames:
     .align 3
     .asciz "bne"
     .align 3
-    .asciz "blt"
-    .align 3
-    .asciz "bge"
-    .align 3
-    .asciz "bltu"
-    .align 3
-    .asciz "bgeu"
-    .align 3
     .asciz "jal"
     .align 3
-fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3, 5, 5, 5, 6, 6, 7, 7, 7, 7, 7, 7, 8
-optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x67, 0x23, 0x23, 0x23, 0x37, 0x17, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x6F
-f3tab:   .byte 0, 0, 1, 2, 3, 4, 5, 5, 6, 7, 0, 2, 3, 4, 6, 7, 1, 5, 5, 0, 1, 2, 4, 5, 0, 0, 1, 2, 0, 0, 0, 1, 4, 5, 6, 7, 0
-f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+fmttab:  .byte 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 2, 2, 3, 5, 6, 6, 7, 7, 8
+optab:   .byte 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x13, 0x13, 0x13, 0x13, 0x13, 0x03, 0x03, 0x67, 0x23, 0x37, 0x17, 0x63, 0x63, 0x6F
+f3tab:   .byte 0, 0, 1, 2, 4, 5, 6, 7, 0, 2, 4, 6, 7, 2, 5, 0, 2, 0, 0, 0, 1, 0
+f7tab:   .byte 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 .align 3
 regnames:
     .asciz "zero"
@@ -1019,18 +988,10 @@ i_rri_imm:
     li   t0, 2
     beq  a2, t0, bad_range
     mv   s9, a1
-    lw   t3, 20(sp)
-    li   t4, 1
-    bne  t3, t4, i_chk12
-    li   t0, 32
-    bgeu s9, t0, bad_shamt
-    j    i_put
-i_chk12:
     addi t0, s9, 1024
     addi t0, t0, 1024
     li   t1, 4096
     bgeu t0, t1, bad_range
-i_put:
     slli t0, s9, 20
     or   s8, s8, t0
     j    i_finish
@@ -1140,8 +1101,6 @@ bad_joff:   la a0, e_joff
 bad_boff:   la a0, e_boff
             j  pl_error
 bad_nolbl:  la a0, e_nolbl
-            j  pl_error
-bad_shamt:  la a0, e_shamt
             j  pl_error
 
 report_error:

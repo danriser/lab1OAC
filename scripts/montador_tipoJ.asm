@@ -53,10 +53,10 @@ sep4:        .asciz " %\n"
 instnames:
     .asciz "jal"
     .align 3
-fmttab:       .byte 8
-optab:       .byte 0x6F
-f3tab:       .byte 0
-f7tab:       .byte 0
+fmttab:   .byte 8
+optab:    .byte 0x6F
+f3tab:    .byte 0
+f7tab:    .byte 0
 .align 3
 regnames:
     .asciz "zero"
@@ -581,10 +581,10 @@ j_fmt:
     call scan_ident
     mv   a1, s10
     call skip_ws
-    bgeu a0, s10, j_nord
+    bgeu a0, s10, j_sem_rd
     lbu  t0, 0(a0)
     li   t1, 44
-    bne  t0, t1, j_nord
+    bne  t0, t1, j_sem_rd
     mv   a0, s7
     mv   a1, s10
     call parse_reg
@@ -598,52 +598,18 @@ j_fmt:
     call expect_char
     bltz a1, bad_sep
     mv   s7, a0
-    j    j_target
-j_nord:
+    j    j_alvo
+j_sem_rd:
     ori  s8, s8, 128
-j_target:
+j_alvo:
     mv   a0, s7
     mv   a1, s10
-    call skip_ws
+    call ler_alvo
     mv   s7, a0
-    bgeu s7, s10, bad_nolbl
-    lbu  t0, 0(s7)
-    li   t1, 45
-    beq  t0, t1, j_num
-    li   t1, 43
-    beq  t0, t1, j_num
-    addi t1, t0, -48
-    li   t2, 10
-    bltu t1, t2, j_num
-    mv   a0, s7
-    mv   a1, s10
-    call scan_ident
-    sw   a0, 12(sp)
-    sub  a1, a0, s7
-    mv   a0, s7
-    call find_label
-    bltz a0, bad_undef
-    slli t0, a0, 2
-    la   t1, lbladdr
-    add  t1, t1, t0
-    lw   t1, 0(t1)
-    slli t2, s5, 2
-    li   t3, 0x00400000
-    add  t2, t2, t3
-    sub  s9, t1, t2
-    lw   s7, 12(sp)
-    j    j_check
-j_num:
-    mv   a0, s7
-    mv   a1, s10
-    call parse_imm
-    mv   s7, a0
-    li   t0, 1
-    beq  a2, t0, bad_imm
-    li   t0, 2
-    beq  a2, t0, bad_joff
     mv   s9, a1
-j_check:
+    li   t0, 4
+    beq  a2, t0, bad_joff
+    bnez a2, erro_alvo
     andi t0, s9, 1
     bnez t0, bad_joff
     li   t0, 1048576
@@ -667,6 +633,13 @@ j_check:
     slli t1, t1, 12
     or   s8, s8, t1
     j    i_finish
+
+erro_alvo:
+    li   t0, 1
+    beq  a2, t0, bad_nolbl
+    li   t0, 2
+    beq  a2, t0, bad_undef
+    j    bad_imm
 
 i_finish:
     mv   a0, s7
@@ -1000,108 +973,86 @@ put_dec_ret:
     ret
 
 parse_imm:
-parse_imm_ws:
-    bgeu a0, a1, parse_imm_bad
-    lbu  t0, 0(a0)
-    li   t1, 32
-    beq  t0, t1, parse_imm_ws_next
-    li   t1, 9
-    beq  t0, t1, parse_imm_ws_next
-    li   t1, 13
-    bne  t0, t1, parse_imm_sign
-parse_imm_ws_next:
-    addi a0, a0, 1
-    j    parse_imm_ws
-parse_imm_sign:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    call skip_ws
     li   t6, 0
+    bgeu a0, a1, imm_erro
+    lbu  t0, 0(a0)
     li   t1, 45
-    bne  t0, t1, parse_imm_plus
+    bne  t0, t1, imm_mais
     li   t6, 1
     addi a0, a0, 1
-    j    parse_imm_start
-parse_imm_plus:
+    j    imm_inicio
+imm_mais:
     li   t1, 43
-    bne  t0, t1, parse_imm_start
+    bne  t0, t1, imm_inicio
     addi a0, a0, 1
-parse_imm_start:
-    bgeu a0, a1, parse_imm_bad
+imm_inicio:
+    li   t2, 0
+    li   t5, 0
+    li   t4, 10
+    addi t0, a0, 1
+    bgeu t0, a1, imm_loop
     lbu  t0, 0(a0)
     li   t1, 48
-    bne  t0, t1, parse_imm_dec
-    addi t2, a0, 1
-    bgeu t2, a1, parse_imm_dec
-    lbu  t3, 0(t2)
-    ori  t3, t3, 32
-    li   t4, 120
-    bne  t3, t4, parse_imm_dec
+    bne  t0, t1, imm_loop
+    lbu  t0, 1(a0)
+    ori  t0, t0, 32
+    li   t1, 120
+    bne  t0, t1, imm_loop
+    li   t4, 16
     addi a0, a0, 2
-    li   t2, 0
-    li   t5, 0
-parse_imm_hex:
-    bgeu a0, a1, parse_imm_hex_end
+imm_loop:
+    bgeu a0, a1, imm_fim
     lbu  t0, 0(a0)
     addi t3, t0, -48
-    li   t4, 10
-    bltu t3, t4, parse_imm_hex_dig
-    ori  t3, t0, 32
-    addi t3, t3, -97
-    li   t4, 6
-    bgeu t3, t4, parse_imm_hex_end
-    addi t3, t3, 10
-parse_imm_hex_dig:
-    slli t2, t2, 4
-    or   t2, t2, t3
-    addi t5, t5, 1
-    addi a0, a0, 1
-    j    parse_imm_hex
-parse_imm_hex_end:
-    beqz t5, parse_imm_bad
-    li   t4, 8
-    bltu t4, t5, parse_imm_range
-    j    parse_imm_neg
-parse_imm_dec:
-    li   t2, 0
-    li   t5, 0
-parse_imm_dec_loop:
-    bgeu a0, a1, parse_imm_dec_end
-    lbu  t0, 0(a0)
-    addi t3, t0, -48
-    li   t4, 10
-    bgeu t3, t4, parse_imm_dec_end
-    li   t4, 429496729
-    bltu t4, t2, parse_imm_range
-    bne  t2, t4, parse_imm_dec_ok
-    li   t4, 5
-    bltu t4, t3, parse_imm_range
-parse_imm_dec_ok:
-    li   t4, 10
+    li   t1, 10
+    bltu t3, t1, imm_conta
+    li   t1, 16
+    bne  t4, t1, imm_fim
+    ori  t0, t0, 32
+    addi t3, t0, -87
+    li   t1, 10
+    bltu t3, t1, imm_fim
+    li   t1, 16
+    bgeu t3, t1, imm_fim
+imm_conta:
+    mulhu t1, t2, t4
+    bnez t1, imm_grande
     mul  t2, t2, t4
     add  t2, t2, t3
+    bltu t2, t3, imm_grande
     addi t5, t5, 1
     addi a0, a0, 1
-    j    parse_imm_dec_loop
-parse_imm_dec_end:
-    beqz t5, parse_imm_bad
-    bnez t6, parse_imm_dec_negchk
-    bltz t2, parse_imm_range
-    j    parse_imm_neg
-parse_imm_dec_negchk:
-    li   t4, 0x80000000
-    bltu t4, t2, parse_imm_range
-parse_imm_neg:
-    beqz t6, parse_imm_ok
+    j    imm_loop
+imm_fim:
+    beqz t5, imm_erro
+    li   t1, 10
+    bne  t4, t1, imm_sinal
+    bnez t6, imm_negativo
+    bltz t2, imm_grande
+    j    imm_sinal
+imm_negativo:
+    li   t1, 0x80000000
+    bltu t1, t2, imm_grande
+imm_sinal:
+    beqz t6, imm_ok
     neg  t2, t2
-parse_imm_ok:
+imm_ok:
     mv   a1, t2
     li   a2, 0
-    ret
-parse_imm_range:
+    j    imm_sai
+imm_grande:
     li   a1, 0
     li   a2, 2
-    ret
-parse_imm_bad:
+    j    imm_sai
+imm_erro:
     li   a1, 0
     li   a2, 1
+imm_sai:
+    lw   ra, 12(sp)
+    addi sp, sp, 16
     ret
 
 expect_char:
@@ -1125,57 +1076,109 @@ parse_mem:
     addi sp, sp, -16
     sw   ra, 12(sp)
     sw   a1, 4(sp)
+    sw   zero, 8(sp)
     call skip_ws
-    bgeu a0, a1, parse_mem_bad_imm
+    bgeu a0, a1, mem_erro1
     lbu  t0, 0(a0)
     li   t1, 40
-    beq  t0, t1, parse_mem_noimm
+    beq  t0, t1, mem_abre
     lw   a1, 4(sp)
     call parse_imm
-    bnez a2, parse_mem_immerr
+    bnez a2, mem_erro_imm
     addi t0, a1, 1024
     addi t0, t0, 1024
     li   t1, 4096
-    bgeu t0, t1, parse_mem_range
+    bgeu t0, t1, mem_erro2
     sw   a1, 8(sp)
-    j    parse_mem_paren
-parse_mem_noimm:
-    sw   zero, 8(sp)
-parse_mem_paren:
+mem_abre:
     lw   a1, 4(sp)
     li   a2, 40
     call expect_char
-    bltz a1, parse_mem_bad_paren
+    bltz a1, mem_erro3
     lw   a1, 4(sp)
     call parse_reg
-    bltz a1, parse_mem_bad_reg
+    bltz a1, mem_erro4
     sw   a1, 0(sp)
     lw   a1, 4(sp)
     li   a2, 41
     call expect_char
-    bltz a1, parse_mem_bad_paren
+    bltz a1, mem_erro3
     lw   a1, 8(sp)
     lw   a2, 0(sp)
     li   a3, 0
-    j    parse_mem_ret
-parse_mem_immerr:
+    j    mem_sai
+mem_erro_imm:
     mv   a3, a2
-    j    parse_mem_fail
-parse_mem_bad_imm:
+    j    mem_falha
+mem_erro1:
     li   a3, 1
-    j    parse_mem_fail
-parse_mem_range:
+    j    mem_falha
+mem_erro2:
     li   a3, 2
-    j    parse_mem_fail
-parse_mem_bad_paren:
+    j    mem_falha
+mem_erro3:
     li   a3, 3
-    j    parse_mem_fail
-parse_mem_bad_reg:
+    j    mem_falha
+mem_erro4:
     li   a3, 4
-parse_mem_fail:
+mem_falha:
     li   a1, 0
     li   a2, 0
-parse_mem_ret:
+mem_sai:
+    lw   ra, 12(sp)
+    addi sp, sp, 16
+    ret
+
+ler_alvo:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    sw   a1, 8(sp)
+    call skip_ws
+    bgeu a0, a1, alvo_sem
+    lbu  t0, 0(a0)
+    li   t1, 45
+    beq  t0, t1, alvo_numero
+    li   t1, 43
+    beq  t0, t1, alvo_numero
+    addi t1, t0, -48
+    li   t2, 10
+    bltu t1, t2, alvo_numero
+    sw   a0, 4(sp)
+    call scan_ident
+    sw   a0, 0(sp)
+    lw   t0, 4(sp)
+    sub  a1, a0, t0
+    mv   a0, t0
+    call find_label
+    bltz a0, alvo_indefinido
+    slli t0, a0, 2
+    la   t1, lbladdr
+    add  t1, t1, t0
+    lw   t1, 0(t1)
+    slli t2, s5, 2
+    li   t3, 0x00400000
+    add  t2, t2, t3
+    sub  a1, t1, t2
+    lw   a0, 0(sp)
+    li   a2, 0
+    j    alvo_sai
+alvo_numero:
+    lw   a1, 8(sp)
+    call parse_imm
+    beqz a2, alvo_sai
+    li   t0, 1
+    beq  a2, t0, alvo_inval
+    li   a2, 4
+    j    alvo_sai
+alvo_inval:
+    li   a2, 3
+    j    alvo_sai
+alvo_sem:
+    li   a2, 1
+    j    alvo_sai
+alvo_indefinido:
+    li   a2, 2
+alvo_sai:
     lw   ra, 12(sp)
     addi sp, sp, 16
     ret
@@ -1429,32 +1432,32 @@ find_label:
     la   t0, lblcount
     lw   t0, 0(t0)
     li   t1, 0
-find_label_loop:
-    bgeu t1, t0, find_label_none
+fl_loop:
+    bgeu t1, t0, fl_none
     slli t2, t1, 5
     la   t3, lblnames
     add  t3, t3, t2
     li   t4, 0
-find_label_cmp:
-    bgeu t4, a1, find_label_tail
+fl_cmp:
+    bgeu t4, a1, fl_tail
     add  t5, a0, t4
     lbu  t5, 0(t5)
     add  t6, t3, t4
     lbu  t6, 0(t6)
-    bne  t5, t6, find_label_next
+    bne  t5, t6, fl_next
     addi t4, t4, 1
-    j    find_label_cmp
-find_label_tail:
+    j    fl_cmp
+fl_tail:
     add  t6, t3, a1
     lbu  t6, 0(t6)
-    beqz t6, find_label_found
-find_label_next:
+    beqz t6, fl_found
+fl_next:
     addi t1, t1, 1
-    j    find_label_loop
-find_label_found:
+    j    fl_loop
+fl_found:
     mv   a0, t1
     ret
-find_label_none:
+fl_none:
     li   a0, -1
     ret
 
@@ -1466,61 +1469,61 @@ define_label:
     la   t0, pass
     lw   t0, 0(t0)
     li   t1, 1
-    bne  t0, t1, define_label_ret
+    bne  t0, t1, dl_ret
     li   t0, 31
-    bltu t0, a1, define_label_long
+    bltu t0, a1, dl_long
     call find_label
-    bgez a0, define_label_dup
+    bgez a0, dl_dup
     la   t0, lblcount
     lw   t1, 0(t0)
     li   t2, 256
-    bgeu t1, t2, define_label_full
+    bgeu t1, t2, dl_full
     slli t2, t1, 5
     la   t3, lblnames
     add  t3, t3, t2
     lw   a0, 8(sp)
     lw   a1, 4(sp)
     li   t4, 0
-define_label_copy:
-    bgeu t4, a1, define_label_copied
+dl_copy:
+    bgeu t4, a1, dl_copied
     add  t5, a0, t4
     lbu  t5, 0(t5)
     add  t6, t3, t4
     sb   t5, 0(t6)
     addi t4, t4, 1
-    j    define_label_copy
-define_label_copied:
+    j    dl_copy
+dl_copied:
     add  t6, t3, a1
     sb   zero, 0(t6)
-    beqz s3, define_label_text
+    beqz s3, dl_text
     li   t4, 0x10010000
     la   t5, datalen
     lw   t5, 0(t5)
     add  t4, t4, t5
-    j    define_label_store
-define_label_text:
+    j    dl_store
+dl_text:
     slli t4, s5, 2
     li   t5, 0x00400000
     add  t4, t4, t5
-define_label_store:
+dl_store:
     slli t2, t1, 2
     la   t3, lbladdr
     add  t3, t3, t2
     sw   t4, 0(t3)
     addi t1, t1, 1
     sw   t1, 0(t0)
-    j    define_label_ret
-define_label_dup:
+    j    dl_ret
+dl_dup:
     la   a0, e_dup
-    j    define_label_err
-define_label_long:
+    j    dl_err
+dl_long:
     la   a0, e_llong
-    j    define_label_err
-define_label_full:
+    j    dl_err
+dl_full:
     la   a0, e_lfull
-define_label_err:
+dl_err:
     call report_error_now
-define_label_ret:
+dl_ret:
     lw   ra, 12(sp)
     addi sp, sp, 16
     ret

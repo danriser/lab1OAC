@@ -73,6 +73,7 @@ As que chamam outras rotinas guardam `ra` e os `s*` na pilha.
 | `parse_reg` | a0 = cursor, a1 = fim | a0 = novo cursor, a1 = nº do registrador ou -1 |
 | `parse_imm` | a0 = cursor, a1 = fim | a0 = novo cursor, a1 = valor, a2 = status (0 ok, 1 inválido, 2 não cabe em 32 bits) |
 | `parse_mem` | a0 = cursor, a1 = fim | lê `imm(reg)`: a1 = imm, a2 = reg, a3 = status |
+| `ler_alvo` | a0 = cursor, a1 = fim | lê rótulo ou número: a0 = novo cursor, a1 = deslocamento até o alvo, a2 = status (0 ok, 1 ausente, 2 rótulo indefinido, 3 número inválido, 4 não cabe em 32 bits) |
 | `expect_char` | a0 = cursor, a1 = fim, a2 = caractere | a0 = depois do caractere, a1 = 0 ou -1 |
 | `put_str`, `put_hex8`, `put_dec`, `put_range` | a0 = destino | a0 = novo destino |
 | `report_error` | a0 = mensagem | imprime `Erro na linha N: ...` e soma em `s4` |
@@ -104,7 +105,7 @@ Valores de `fmttab`:
 | 7 | `rs1, rs2, rótulo` (tipo B) | `beq t0, t1, fim` |
 | 8 | `rd, rótulo` (tipo J) | `jal ra, loop` ou `jal loop` |
 
-A constante `.eqv N_INST` guarda quantas instruções existem (hoje 37). O `lookup` usa esse valor.
+A constante `.eqv N_INST` guarda quantas instruções existem (hoje 22). O `lookup` usa esse valor.
 
 ## Como adicionar uma instrução que já tem formato pronto
 
@@ -146,20 +147,29 @@ Para um formato novo (os formatos 6, 7 e 8, dos tipos U, B e J, foram feitos ass
 5. Erros: use os rótulos `bad_reg`, `bad_sep`, `bad_imm`, `bad_range`, `bad_extra` e `bad_mem`.
    Se precisar de uma mensagem nova, crie `e_xxx` no `.data` e um rótulo `bad_xxx` como os existentes.
 
-Modelo de bloco, tipo S (rs2, imm(rs1)):
+Modelo de bloco, tipo R (`rd, rs1, rs2`). Para cada registrador: lê com `parse_reg`, confere erro e encaixa o número na palavra `s8`:
 
 ```
-s_fmt:
+r_fmt:
     mv   a0, s7              # cursor
     mv   a1, s10             # fim da linha
-    call parse_reg           # rs2 -> a1 (-1 se inválido)
+    call parse_reg           # a1 = número do registrador, ou -1
     bltz a1, bad_reg
-    slli t0, a1, 20          # posição do rs2 na palavra
+    slli t0, a1, 7           # rd fica nos bits 11:7
     or   s8, s8, t0
     mv   s7, a0              # avança o cursor
-    ...
+    # vírgula
+    mv   a0, s7
+    mv   a1, s10
+    li   a2, 44              # ','
+    call expect_char
+    bltz a1, bad_sep
+    mv   s7, a0
+    # ... repete para rs1 (bit 15) e rs2 (bit 20) ...
     j    i_finish
 ```
+
+Para desvios e saltos, o `b_fmt` e o `j_fmt` chamam `ler_alvo`, que lê o rótulo (ou número) e devolve o deslocamento já calculado.
 
 ## Rótulos e as duas passadas
 
